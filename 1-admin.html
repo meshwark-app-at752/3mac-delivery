@@ -1,0 +1,17 @@
+<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>3mac delivery</title>
+<script>const ROLE='admin',TITLE='3mac delivery';</script><style></style></head><body><header><span style="display:flex;align-items:center;gap:8px"><img src=logo.png height=36><b style="line-height:1.2">3mac delivery<br><small style="color:#d4af37">لوحة تحكم</small></b></span><button class=alt onclick="logout()" style="padding:4px 10px">خروج</button></header><div id=app></div><div id=toast></div>
+<script src=common.js></script><script>document.head.insertAdjacentHTML('beforeend',CSS);
+let tab='s';
+function main(){$('#app').innerHTML='<div class=row><button id=a>إحصائيات</button><button id=b class=alt>الطلبات</button><button id=c class=alt>مطاعم</button><button id=d class=alt>مستخدمين</button></div><div id=msg></div><div id=body></div>';
+ for(const[k,t]of[['a','s'],['b','o'],['c','r'],['d','u']])$('#'+k).onclick=()=>{tab=t;draw()};draw()}
+async function draw(){const b=$('#body');
+ if(tab=='s'){const s=await api('admin/stats');if(!s)return;b.innerHTML=`<div class=card>الطلبات: ${s.orders}<br>قيد التنفيذ: ${s.active}<br>تم تسليمها: ${s.delivered}<br>إجمالي المبيعات: ${s.sales} ج<br>العملاء: ${s.customers}<br>الطيارين: ${s.couriers}<br>المطاعم: ${s.restaurants}</div>`}
+ if(tab=='o'){const o=await api('orders');if(!o)return;b.innerHTML=o.map(x=>`<div class=card><b>#${x.id} ${esc(x.rest_name)}</b> <span class=st>${x.status_ar}</span><br>${esc(x.name)} ${esc(x.phone)}<br>${x.total} ج ${['delivered','cancelled','rejected'].includes(x.status)?'':`<button class=red onclick="cx(${x.id})">إلغاء</button>`}</div>`).join('')}
+ if(tab=='r'){b.innerHTML='<div class=card><h3>إضافة مطعم</h3><input id=rn placeholder="اسم المطعم"><button onclick=ar()>إضافة مطعم</button></div><div class=card><h3>إضافة طيار</h3><input id=cn placeholder="اسم الطيار"><button onclick=ac()>إضافة طيار</button></div>'}
+ if(tab=='u'){const u=await api('admin/users');if(!u)return;b.innerHTML=u.map(x=>`<div class=card><div class=row><span>${esc(x.name)} (${x.role})<br><small>كود: ${esc(x.code)}</small></span><button class="${x.active?'red':''}" onclick="tg(${x.id})">${x.active?'إيقاف':'تفعيل'}</button></div></div>`).join('')}}
+async function ar(){const r=await api('admin/add_restaurant',{name:$('#rn').value});if(r){tab='u';await draw();$('#msg').innerHTML='<div class=card style="font-size:20px;border:2px solid #d4af37">تم إضافة المطعم. كود الدخول: <b>'+r.code+'</b></div>'}}
+async function ac(){const r=await api('admin/add_courier',{name:$('#cn').value});if(r){tab='u';await draw();$('#msg').innerHTML='<div class=card style="font-size:20px;border:2px solid #d4af37">تم إضافة الطيار. كود الدخول: <b>'+r.code+'</b></div>'}}
+async function tg(id){await api('admin/user_toggle',{id});draw()}
+async function cx(id){await api('order_action',{id,action:'cancel'});draw()}
+
+start(false,main);</script></body></html>
