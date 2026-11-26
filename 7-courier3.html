@@ -1,0 +1,26 @@
+<!doctype html><html lang=ar><head><meta charset=utf-8></head><body>
+<script>const ROLE='courier',TITLE='3mac - الطيار';</script>
+<script src=/common.js></script>
+<script>
+let tab='orders',ORD=[],REC=null,seen=null,FAILID=0;
+const FR=['العميل مردش','العنوان غلط','العميل رفض الاستلام','مشكلة في الأوردر'];
+async function load(){const [o,r]=await Promise.all([api('orders'),api('my/record')]);if(o){ORD=o;const rd=o.filter(x=>x.status=='ready'||x.status=='accepted').map(x=>x.id);if(seen===null){seen=new Set(rd);if(rd.length)beep(2)}else{const f=rd.filter(i=>!seen.has(i));f.forEach(i=>seen.add(i));if(f.length){beep(3);toast('أوردر جاهز!')}}}if(r)REC=r}
+function oCard(o){const mine=o.status=='picked';const items=o.items.map(i=>i.qty+' × '+esc(i.name)).join('، ');
+ let h=`<div class="card ${o.status!='picked'?'new':''}"><div class=row><b>${esc(o.rest_name)} #${o.id}</b><span class=st>${esc(o.status_ar)}</span></div><div>${items}</div><div class=row><span>تحصّل كاش:</span><b>${money(o.total)}</b></div><small>رسوم التوصيل: ${money(o.fee)}</small>`;
+ if(o.status=='ready'||o.status=='accepted')h+=`<br><button onclick="take(${o.id})">خد الأوردر</button>`;
+ if(mine){h+=`${!o.ready_at?'<div class=banner>الأكل لسه بيتجهز في المطعم</div>':''}<div style="margin-top:6px"><b>${esc(o.name)}</b><br>${esc(o.address)}${o.note?'<br><small>📝 '+esc(o.note)+'</small>':''}</div>
+  <button data-u="tel:${esc(String(o.phone).replace(/[^0-9+]/g,''))}" onclick="openExt(this.dataset.u)">📞 اتصل بالعميل ${esc(o.phone)}</button>
+  <button class=alt data-u="${o.lat!=null&&o.lng!=null?'https://www.google.com/maps/search/?api=1&query='+o.lat+','+o.lng:'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(o.address)}" onclick="openExt(this.dataset.u)">🗺️ افتح الخريطة</button>
+  <br>${FAILID==o.id?'<div>سبب تعذر التسليم:</div>'+FR.map((r,i)=>`<button class=red onclick="fail(${o.id},${i})">${r}</button>`).join('')+'<button class=alt onclick="FAILID=0;render()">رجوع</button>':`<button onclick="deliver(${o.id})">✔ تم التسليم</button><button class=red onclick="FAILID=${o.id};render()">تعذر التسليم</button>`}</div>`}
+ return h+'</div>'}
+function openExt(u){try{if(window.Android&&Android.openUrl){Android.openUrl(u)}else{location.href=u}}catch(e){toast('مقدرتش أفتح الرابط')}}
+async function take(id){const r=await api('order_action',{id,action:'take'});if(r)toast('الأوردر معاك');await load();render()}
+async function deliver(id){const r=await api('order_action',{id,action:'deliver'});if(r)toast('تم التسليم ✔');await load();render()}
+async function fail(id,i){const r=await api('order_action',{id,action:'fail',reason:FR[i]});FAILID=0;if(r)toast('تم التسجيل');await load();render()}
+function render(){let h='<div class=tabs><button class="'+(tab=='orders'?'on':'')+'" onclick="tab=\'orders\';render()">الأوردرات</button><button class="'+(tab=='rec'?'on':'')+'" onclick="tab=\'rec\';render()">سجل النهاردة</button></div>';
+ if(tab=='orders'){const mine=ORD.filter(o=>o.status=='picked'),rd=ORD.filter(o=>o.status=='ready'||o.status=='accepted');
+  h+=(mine.length?'<h3>معايا</h3>'+mine.map(oCard).join(''):'')+'<h3>أوردرات متاحة (جاري التحضير أو جاهزة)</h3>'+(rd.length?rd.map(oCard).join(''):'<div class=card>مفيش أوردرات متاحة دلوقتي</div>')}
+ else if(REC){h+=`<div class=card><h3>سجل النهاردة</h3><div class=row><span>اتسلّم</span><b>${REC.delivered}</b></div><div class=row><span>تعذر تسليمه</span><b>${REC.failed}</b></div><div class=row><span>إجمالي الكاش اللي اتحصّل</span><b>${money(REC.cash)}</b></div><div class=row><span>منه رسوم توصيل</span><b>${money(REC.fees)}</b></div><small>ده سجل بس للمتابعة.</small></div>`+REC.orders.map(o=>`<div class="card row"><span>#${o.id}</span><span>${money(o.total)}</span></div>`).join('')}
+ const sc=window.scrollY;$('#app').innerHTML=h;window.scrollTo(0,sc)}
+start(()=>{watch(async()=>{await load();render()},4000)});
+</script></body></html>
