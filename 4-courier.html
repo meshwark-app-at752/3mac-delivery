@@ -1,0 +1,10 @@
+<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>3mac delivery</title>
+<script>const ROLE='courier',TITLE='3mac delivery';</script><style></style></head><body><header><span style="display:flex;align-items:center;gap:8px"><img src=logo.png height=36><b style="line-height:1.2">3mac delivery<br><small style="color:#d4af37">الطيار</small></b></span><button class=alt onclick="logout()" style="padding:4px 10px">خروج</button></header><div id=app></div><div id=toast></div>
+<script src=common.js></script><script>document.head.insertAdjacentHTML('beforeend',CSS);
+function main(){draw();setInterval(draw,5000)}
+let last=0;
+async function draw(){const o=await api('orders');if(!o)return;$('#app').innerHTML='<button class=alt onclick=logout()>خروج</button>'+(o.map(x=>`<div class=card><div class=row><b>#${x.id} ${esc(x.rest_name)}</b><span class=st>${x.status_ar}</span></div>${x.items.map(i=>esc(i.name)+' ×'+i.qty).join('، ')}<br><b>المطلوب من العميل: ${x.total} ج كاش</b>${x.status=='picked'?`<br>العميل: ${esc(x.name)} <a href="tel:${esc(x.phone)}">${esc(x.phone)}</a><br>العنوان: ${esc(x.address)}`:''}<br>${x.status=='ready'?`<button onclick="act(${x.id},'take')">استلمت الأوردر</button>`:''}${x.status=='picked'?`<button onclick="act(${x.id},'deliver')">تم التسليم</button>`:''}</div>`).join('')||'<p>لا توجد أوردرات حاليا</p>');
+ const n=o.filter(x=>x.status=='ready').length;if(n>last)toast('أوردر جديد جاهز');last=n}
+async function act(id,action){if(await api('order_action',{id,action}))draw()}
+
+start(false,main);</script></body></html>

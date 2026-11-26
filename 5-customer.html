@@ -1,0 +1,18 @@
+<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>3mac delivery</title>
+<script>const ROLE='customer',TITLE='3mac delivery';</script><style></style></head><body><header><span style="display:flex;align-items:center;gap:8px"><img src=logo.png height=36><b style="line-height:1.2">3mac delivery</b></span><button class=alt onclick="logout()" style="padding:4px 10px">خروج</button></header><div id=app></div><div id=toast></div>
+<script src=common.js></script><script>document.head.insertAdjacentHTML('beforeend',CSS);
+let cart={},rid=null,tab='rest';
+function main(){
+ $('#app').innerHTML='<div class=row><button id=t1>المطاعم</button><button id=t2 class=alt>طلباتي</button></div><div id=body></div>';
+ $('#t1').onclick=()=>{tab='rest';rid=null;draw()};$('#t2').onclick=()=>{tab='orders';draw()};draw();setInterval(()=>{if(tab=='orders')draw()},6000)}
+async function draw(){const b=$('#body');
+ if(tab=='orders'){const o=await api('orders');if(!o)return;b.innerHTML=o.map(x=>`<div class=card><div class=row><b>#${x.id} ${esc(x.rest_name)}</b><span class=st>${x.status_ar}</span></div>${x.items.map(i=>esc(i.name)+' ×'+i.qty).join('، ')}<br><b>${x.total} ج</b> (كاش)${x.status=='new'?`<br><button class=red onclick="cancel(${x.id})">إلغاء</button>`:''}</div>`).join('')||'<p>لا توجد طلبات</p>';return}
+ if(!rid){const r=await api('restaurants');if(!r)return;b.innerHTML=r.map(x=>`<div class=card onclick="rid=${x.id};cart={};draw()"><b>${esc(x.name)}</b></div>`).join('')||'<p>لا توجد مطاعم مفتوحة</p>';return}
+ const m=await api('menu/'+rid);if(!m)return;window._m=m;
+ b.innerHTML=m.map(x=>`<div class=card><div class=row><span>${esc(x.name)}<br><small>${x.price} ج</small></span><span><button onclick="chg(${x.id},-1)">-</button> <b id=q${x.id}>${cart[x.id]||0}</b> <button onclick="chg(${x.id},1)">+</button></span></div></div>`).join('')+'<div class=card><input id=addr placeholder="العنوان بالتفصيل"><input id=cph placeholder="رقم موبايل للتواصل" inputmode=tel><b id=tot></b><br>الدفع كاش عند الاستلام<br><button onclick=send()>اطلب</button></div>';tot()}
+function chg(id,d){cart[id]=Math.max(0,(cart[id]||0)+d);$('#q'+id).textContent=cart[id];tot()}
+function tot(){let t=0;(window._m||[]).forEach(x=>t+=x.price*(cart[x.id]||0));$('#tot').textContent='الإجمالي: '+t+' ج'}
+async function send(){const items=Object.keys(cart).filter(k=>cart[k]>0).map(k=>({id:+k,qty:cart[k]}));const r=await api('order',{rest_id:rid,items,address:$('#addr').value,phone:$('#cph').value});if(r){toast('تم إرسال الطلب');cart={};rid=null;tab='orders';draw()}}
+async function cancel(id){if(await api('order_action',{id,action:'cancel'}))draw()}
+
+if(!TOKEN){$('#app').innerHTML=`<div class=card><h2>أهلا بيك</h2><input id=gn placeholder="اسمك"><input id=gp placeholder="رقم موبايلك" inputmode=tel><button id=gg>ابدأ</button></div>`;$('#gg').onclick=async()=>{const r=await api('guest',{name:$('#gn').value,phone:$('#gp').value});if(r){localStorage.setItem('tk_customer',r.token);TOKEN=r.token;location.reload()}}}else main();</script></body></html>
