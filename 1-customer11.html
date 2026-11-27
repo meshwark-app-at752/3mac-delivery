@@ -1,0 +1,70 @@
+<!doctype html><html lang=ar><head><meta charset=utf-8></head><body>
+<script>(function(){var st=document.createElement('style');st.textContent='.sb{position:relative;height:48px;background:#fff;border-radius:999px;display:flex;align-items:center;margin:8px 0}.sb .sbi{position:absolute;right:16px;top:13px}.sb input#q{width:100%;height:48px;box-sizing:border-box;background:transparent;border:0;border-radius:999px;color:#1F1F1F;font-size:16px;padding:0 48px 0 16px;margin:0;outline:none}.sbp{position:absolute;right:48px;left:16px;top:0;height:48px;line-height:48px;font-size:16px;color:#1F1F1F;pointer-events:none;white-space:nowrap;overflow:hidden}.sbc{display:inline-block;width:2px;height:20px;background:#6B6B6B;vertical-align:middle;margin-right:2px;animation:sbb 1s steps(1) infinite}@keyframes sbb{50%{opacity:0}}';document.head.appendChild(st)})();(function(){var W=['الطعام والبقالة والمزيد','بيتزا','قهوة','وجبات خفيفة'],i=0,n=0,d=1,hold=0;setInterval(function(){var e=document.getElementById('sbw');if(!e)return;if(hold>0){hold--;return}var w=W[i];if(d>0){n++;if(n>=w.length){n=w.length;d=-1;hold=34}}else{n--;if(n<=0){n=0;d=1;i=(i+1)%W.length;hold=5}}e.textContent=w.slice(0,n)},60)})();</script>
+<script>const ROLE='customer',TITLE='3mac delivery';</script>
+<script src=/common.js></script>
+<script>
+let view='home',RESTS=[],CUR=null,MENU=null,CART={},ORDERS=[],Q='',SR=null,DISC=null,LOC=null;
+function signup(){
+ $('#app').innerHTML=`<div class=card><img src=/logo.png style="width:120px;display:block;margin:auto"><h2>أهلا بيك</h2><input id=nm placeholder="اسمك"><input id=ph placeholder="رقم موبايلك" inputmode=tel><button id=go>ابدأ</button></div>`;
+ $('#go').onclick=async()=>{const nm=$('#nm').value.trim(),ph=$('#ph').value.trim();if(!nm||ph.length<6)return toast('اكتب الاسم ورقم الموبايل');
+  const r=await api('guest',{name:nm,phone:ph});if(r&&r.token){localStorage.setItem('tk_customer',r.token);localStorage.setItem('cphone',ph);TOKEN=r.token;location.reload()}}}
+function welcome(){if(localStorage.getItem('welcomed')||!window.SET||!SET.welcome)return;localStorage.setItem('welcomed','1');
+ const d=document.createElement('div');d.className='ov';d.innerHTML='<div class=card style="text-align:center"><img src=/logo.png style="width:100px"><h2>مرحبا!</h2><p>'+esc(SET.welcome)+'</p><button id=wok>يلا نبدأ</button></div>';document.body.appendChild(d);d.querySelector('#wok').onclick=()=>d.remove()}
+window.onSettings=s=>{if(TOKEN)welcome();if($('#bn'))$('#bn').innerHTML=bannerHtml()};
+function bannerHtml(){return window.SET&&SET.banner?'<div class=banner>'+esc(SET.banner)+'</div>':''}
+function tabs(){return `<div class=tabs><button class="${view=='orders'?'':'on'}" onclick="go('home')">المطاعم</button><button class="${view=='orders'?'on':''}" onclick="go('orders')">طلباتي</button></div>`}
+function go(v){view=v;CUR=null;render()}
+async function loadRests(){const r=await api('restaurants');if(r)RESTS=r}
+async function loadOrders(){const r=await api('orders');if(r)ORDERS=r}
+function restCard(r){return `<div class="card row" onclick="openRest(${r.id})" style="cursor:pointer"><div><b>${r.featured?'⭐ ':''}${esc(r.name)}</b><br><small>توصيل ${money(r.fee)}${r.hours_from?' · '+esc(r.hours_from)+' - '+esc(r.hours_to):''}</small>${(r.matches||[]).length?'<br><small>'+r.matches.map(esc).join('، ')+'</small>':''}</div><span class=chip style="${r.open?'':'opacity:.6'}">${r.open?'مفتوح':'مقفول'}</span></div>`}
+async function doSearch(){Q=$('#q').value.trim();if(!Q){SR=null;return renderList()}const r=await api('search?q='+encodeURIComponent(Q));SR=r||[];renderList()}
+function renderList(){const L=SR||RESTS;$('#list').innerHTML=L.length?L.map(restCard).join(''):'<div class=card>مفيش نتائج</div>'}
+async function openRest(id){const m=await api('menu/'+id);if(!m)return;if(!CUR||CUR!=id){CART={};DISC=null}CUR=id;MENU=m;view='menu';render()}
+function qty(id,d){CART[id]=Math.max(0,(CART[id]||0)+d);if(!CART[id])delete CART[id];renderCart();const e=$('#q'+id);if(e)e.textContent=CART[id]||0}
+function itemRow(i){return `<div class="card row"><div class=row style="justify-content:flex-start">${i.pv?`<img class=food src="/photo/${i.id}?v=${i.pv}" loading=lazy>`:''}<div><b>${esc(i.name)}</b><br><small>${money(i.price)}</small></div></div><div><button class="sm alt" onclick="qty(${i.id},-1)">-</button><b id=q${i.id}>${CART[i.id]||0}</b><button class=sm onclick="qty(${i.id},1)">+</button></div></div>`}
+function menuView(){const m=MENU,items=m.items;const top=items.filter(i=>i.sold>0).sort((a,b)=>b.sold-a.sold).slice(0,3);
+ let h=`<button class=alt onclick="go('home')">← رجوع</button><div class=card><h3>${esc(m.restaurant.name)}</h3><small>توصيل ${money(m.restaurant.fee)} · ${m.restaurant.open?'مفتوح':'مقفول دلوقتي'}</small></div>`;
+ if(top.length)h+='<h3>🔥 الأكثر طلبا</h3>'+top.map(itemRow).join('');
+ const cats={};items.forEach(i=>{(cats[i.category||'أصناف']=cats[i.category||'أصناف']||[]).push(i)});
+ for(const c in cats)h+='<h3>'+esc(c)+'</h3>'+cats[c].map(itemRow).join('');
+ if(!items.length)h+='<div class=card>مفيش أصناف متاحة</div>';
+ return h+'<div id=cart></div>'}
+function sub(){return MENU.items.reduce((s,i)=>s+(CART[i.id]||0)*i.price,0)}
+function renderCart(){const n=Object.values(CART).reduce((a,b)=>a+b,0);const e=$('#cart');if(!e)return;e.innerHTML=n?`<div class=card><div class=row><b>${n} صنف · ${money(sub())}</b><button onclick="checkout()">كمّل الطلب</button></div></div>`:''}
+function total(){const f=MENU.restaurant.fee,s=sub();const d=DISC?Math.min(DISC,s+f):0;return {s,f,d,t:s+f-d}}
+function checkout(){view='checkout';render()}
+function checkoutView(){const t=total();
+ return `<button class=alt onclick="view='menu';render()">← رجوع</button><div class=card><h3>تأكيد الطلب · ${esc(MENU.restaurant.name)}</h3>
+ ${MENU.items.filter(i=>CART[i.id]).map(i=>`<div class=row><span>${CART[i.id]} × ${esc(i.name)}</span><span>${money(CART[i.id]*i.price)}</span></div>`).join('')}
+ <input id=ad placeholder="العنوان بالتفصيل"><button class=alt onclick="locate()">📍 حدد موقعي</button><div id=lc class=mut>${LOC?'تم تحديد موقعك ✔':''}</div>
+ <input id=ph placeholder="رقم الموبايل" inputmode=tel value="${esc(localStorage.getItem('cphone')||'')}">
+ <textarea id=nt rows=2 placeholder="ملاحظات على الطلب (اختياري)"></textarea>
+ <div class=row><input id=dc placeholder="كود خصم (اختياري)" style="flex:1"><button class=alt onclick="chkDisc()">تطبيق</button></div>
+ <div id=tt>${totalHtml(t)}</div><button onclick="send()" style="width:100%">اطلب (الدفع كاش عند الاستلام)</button></div>`}
+function totalHtml(t){return `<div class=row><span>الأكل</span><span>${money(t.s)}</span></div><div class=row><span>التوصيل</span><span>${money(t.f)}</span></div>${t.d?`<div class=row><span>الخصم</span><span>- ${money(t.d)}</span></div>`:''}<div class=row><b>الإجمالي</b><b>${money(t.t)}</b></div>`}
+async function chkDisc(){const c=$('#dc').value.trim();if(!c){DISC=null;$('#tt').innerHTML=totalHtml(total());return}const r=await api('discount_check',{code:c});if(r){DISC=r.amount;toast('تم تطبيق الخصم');$('#tt').innerHTML=totalHtml(total())}else{DISC=null;$('#tt').innerHTML=totalHtml(total())}}
+function locate(){if(!navigator.geolocation)return toast('الموقع مش متاح على الجهاز');$('#lc').textContent='بحدد موقعك...';
+ navigator.geolocation.getCurrentPosition(p=>{LOC={lat:p.coords.latitude,lng:p.coords.longitude};$('#lc').textContent='تم تحديد موقعك ✔'},e=>{$('#lc').textContent='';toast('مقدرتش أحدد موقعك، اكتب العنوان بالتفصيل')},{enableHighAccuracy:true,timeout:15000,maximumAge:60000})}
+async function send(){const ad=$('#ad').value.trim(),ph=$('#ph').value.trim();if(ad.length<3)return toast('اكتب العنوان');if(ph.length<6)return toast('اكتب رقم الموبايل');
+ const code=$('#dc').value.trim();
+ const b=document.querySelector('button[onclick="send()"]');b.disabled=true;
+ const r=await api('order',{rest_id:CUR,items:Object.keys(CART).map(k=>({id:+k,qty:CART[k]})),address:ad,phone:ph,note:$('#nt').value.trim(),lat:LOC&&LOC.lat,lng:LOC&&LOC.lng,discount_code:DISC?code:''});
+ b.disabled=false;if(!r)return;localStorage.setItem('cphone',ph);CART={};DISC=null;toast('تم إرسال الطلب ✔');view='orders';CUR=null;await loadOrders();render()}
+async function cancelO(id){const r=await api('order_action',{id,action:'cancel'});if(r){toast('تم إلغاء الطلب');await loadOrders();render()}}
+function orderCard(o){const act=['new','accepted','ready','picked'].includes(o.status);
+ return `<div class="card ${act?'new':''}"><div class=row><b>${esc(o.rest_name)} #${o.id}</b><span class=st>${esc(o.status_ar)}</span></div>
+ <small>${timeAgo(o.created)}</small><br>${o.items.map(i=>i.qty+' × '+esc(i.name)).join('<br>')}
+ ${o.note?'<br><small>ملاحظتك: '+esc(o.note)+'</small>':''}${o.status=='rejected'&&o.reject_reason?'<div style="color:#e57373">سبب الرفض: '+esc(o.reject_reason)+'</div>':''}
+ ${o.status=='failed'&&o.fail_reason?'<div style="color:#e57373">السبب: '+esc(o.fail_reason)+'</div>':''}
+ <div class=row><span>الإجمالي (كاش)</span><b>${money(o.total)}</b></div>${o.status=='new'?`<button class="red sm" onclick="cancelO(${o.id})">إلغاء الطلب</button>`:''}</div>`}
+function render(){let h='';
+ if(view=='home'){h=tabs()+'<div id=bn>'+bannerHtml()+'</div><div class=sb><svg class=sbi viewBox="0 0 24 24" width=22 height=22 fill=none stroke="#B8B8B8" stroke-width=2 stroke-linecap=round><circle cx=11 cy=11 r=7></circle><path d="M20 20l-3.5-3.5"></path></svg><div id=sbph class=sbp'+(Q?' style="display:none"':'')+'><span>ابحث عن</span> <span id=sbw></span></div><input id=q aria-label="ابحث عن مطعم أو أكلة" value="'+esc(Q)+'" oninput="document.getElementById(\'sbph\').style.display=this.value?\'none\':\'\';clearTimeout(window._s);window._s=setTimeout(doSearch,350)"></div><div id=list></div>';$('#app').innerHTML=h;renderList();return}
+ if(view=='orders'){h=tabs()+(ORDERS.length?ORDERS.map(orderCard).join(''):'<div class=card>مفيش طلبات لسه</div>');$('#app').innerHTML=h;return}
+ if(view=='menu'){$('#app').innerHTML=menuView();renderCart();return}
+ if(view=='checkout'){$('#app').innerHTML=checkoutView()}}
+let prev={};
+async function refresh(){if(view=='checkout')return;await loadRests();await loadOrders();
+ if(view=='home'){const f=document.activeElement&&document.activeElement.id=='q';if(!f&&!Q)SR=null;if(!Q)renderList();else if(!f)renderList()}
+ else if(view=='orders')render()}
+if(TOKEN)start(()=>{watch(async()=>{await refresh()},4000);welcome();render()});else{shell(TITLE);signup()}
+</script></body></html>
