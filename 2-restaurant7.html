@@ -1,0 +1,99 @@
+<!doctype html><html lang=ar><head><meta charset=utf-8></head><body>
+<script>const ROLE='restaurant',TITLE='3mac - المطعم';</script>
+<script src=/common.js></script>
+<script>
+let tab='orders',INFO=null,ORD=[],MENU=[],BIG=localStorage.getItem('big')=='1',seen=null,EDIT=0,DEL=0,PICK=0,REJ=0;
+const REASONS=['الصنف خلص','المطعم زحمة','قفلنا النهاردة','مش قادرين نوصل للمنطقة'];
+const PREPS=[10,15,20,30,45,60];
+function tabsH(){const t=[['orders','الطلبات'],['hist','السجل'],['menu','المنيو'],['set','الإعدادات']];return '<div class=tabs>'+t.map(x=>`<button class="${tab==x[0]?'on':''}" onclick="tab='${x[0]}';EDIT=0;render()">${x[1]}</button>`).join('')+'</div>'}
+async function load(){const [i,o,m]=await Promise.all([api('my/info'),api('orders'),api('my/menu')]);if(i)INFO=i;if(o){ORD=o;checkNew()}if(m)MENU=m}
+let lastBeep=0;
+function checkNew(){const nw=ORD.filter(o=>o.status=='new').map(o=>o.id);if(seen===null){seen=new Set(nw);if(nw.length)beep(3);lastBeep=Date.now();return}
+ const fresh=nw.filter(i=>!seen.has(i));fresh.forEach(i=>seen.add(i));if(fresh.length){beep(4);lastBeep=Date.now();toast('طلب جديد!')}}
+setInterval(()=>{if(ORD.some(o=>o.status=='new')&&Date.now()-lastBeep>20000){beep(2);lastBeep=Date.now()}},5000);
+function ordCard(o){const items=o.items.map(i=>i.qty+' × '+esc(i.name)).join('<br>');let act='';
+ if(o.status=='new'){act=(PICK==o.id?'<div>اختار وقت التحضير (دقيقة):</div>'+PREPS.map(p=>`<button onclick="accept(${o.id},${p})">${p}</button>`).join('')+`<button class=alt onclick="PICK=0;render()">إلغاء</button>`
+  :REJ==o.id?'<div>سبب الرفض:</div>'+REASONS.map((r,i)=>`<button class=red onclick="reject(${o.id},${i})">${r}</button>`).join('')+`<button class="alt bkb" onclick="REJ=0;render()">رجوع</button>`
+  :`<button onclick="PICK=${o.id};render()">✔ قبول</button><button class=red onclick="REJ=${o.id};render()">✖ رفض</button>`)}
+ else if(o.status=='accepted'||(o.status=='picked'&&!o.ready_at))act=`<button onclick="act(${o.id},'ready')">الأكل جاهز</button>`;
+ return `<div class="card ${o.status=='new'?'new':''}"><div class=row><b>#${o.id}</b></div><small>${timeAgo(o.created)}</small>${OUI.line(o)}<div style="margin:6px 0">${items}</div>
+ ${o.note?'<div style="background:#d4af3733;padding:6px;border-radius:6px">📝 '+esc(o.note)+'</div>':''}<div class=row><small>الأكل: ${money(o.subtotal)}</small>${o.discount&&o.discount_by=='restaurant'?'<small>خصم عليكم: '+money(o.discount)+'</small>':''}</div>
+ ${o.status=='rejected'?'<small>سبب الرفض: '+esc(o.reject_reason)+'</small>':''}${act}${cancelH(o)}${OUI.tl(o,false,true)}</div>`}
+let CAN=0;
+function canC(o){return ['accepted','ready','picked'].includes(o.status)&&!o.collected_at}
+function cancelH(o){if(!canC(o))return '';return CAN==o.id?'<div>سبب إلغاء الطلب:</div>'+REASONS.map((r,i)=>`<button class=red onclick="cancelR(${o.id},${i})">${r}</button>`).join('')+`<button class="alt bkb" onclick="CAN=0;render()">رجوع</button>`:`<button class="red alt sm" onclick="CAN=${o.id};render()">إلغاء الطلب</button>`}
+async function cancelR(id,i){const r=await api('order_action',{id,action:'cancel',reason:REASONS[i]});CAN=0;if(r)toast('تم إلغاء الطلب');await load();render()}
+async function accept(id,p){const r=await api('order_action',{id,action:'accept',prep_min:p});PICK=0;if(r)toast('تم القبول');await load();render()}
+async function reject(id,i){const r=await api('order_action',{id,action:'reject',reason:REASONS[i]});REJ=0;if(r)toast('تم الرفض');await load();render()}
+async function act(id,a){const r=await api('order_action',{id,action:a});if(r)toast('تم');await load();render()}
+function menuItem(i){if(EDIT==i.id)return `<div class=card><input id=en value="${esc(i.name)}"><input id=ep value="${i.price}" inputmode=decimal><input id=ec value="${esc(i.category)}" placeholder="القسم" list=cats><button onclick="saveEdit(${i.id})">حفظ</button><button class=alt onclick="EDIT=0;render()">إلغاء</button></div>`;
+ return `<div class="card"><div class=row style="justify-content:flex-start">${i.pv?`<img class=food src="/photo/${i.id}?v=${i.pv}">`:''}<div style="flex:1"><b>${esc(i.name)}</b> <small>${esc(i.category)}</small><br>${money(i.price)} ${i.avail?'':'<span class=chip>غير متاح</span>'}</div></div>
+ <button class="sm alt" onclick="EDIT=${i.id};render()">تعديل</button><button class="sm alt" onclick="tg(${i.id})">${i.avail?'خلّصان':'متاح'}</button><button class="sm alt" onclick="document.getElementById('f${i.id}').click()">📷 صورة</button><input type=file accept="image/*" id=f${i.id} style="display:none" onchange="photo(${i.id},this)">
+ ${DEL==i.id?`<button class="sm red" onclick="del(${i.id})">أكيد احذف</button>`:`<button class="sm red" onclick="DEL=${i.id};render()">حذف</button>`}</div>`}
+async function saveEdit(id){const r=await api('my/item_edit',{id,name:$('#en').value,price:$('#ep').value,category:$('#ec').value});if(r){EDIT=0;toast('تم الحفظ');await load();render()}}
+async function tg(id){await api('my/item_toggle',{id});await load();render()}
+async function del(id){DEL=0;await api('my/item_delete',{id});await load();render()}
+async function photo(id,inp){const f=inp.files[0];if(!f)return;toast('بجهز الصورة...');try{const d=await resizeImage(f,400);const r=await api('my/photo',{id,data:d});if(r){toast('تم رفع الصورة');await load();render()}}catch(e){toast('الصورة مش مناسبة')}}
+async function addItem(){const r=await api('my/item',{name:$('#nn').value,price:$('#np').value,category:$('#nc').value});if(r){toast('تمت الإضافة');await load();render()}}
+async function togOpen(){await api('my/toggle',{});await load();render()}
+async function savePromo(){const r=await api('my/promo',{text:$('#pm').value});if(r){toast('تم الحفظ');await load();render()}}
+async function saveHours(){const r=await api('my/hours',{from:$('#hf').value,to:$('#ht').value});if(r){toast('تم الحفظ');await load();render()}}
+async function clearHours(){const r=await api('my/hours',{from:'',to:''});if(r){toast('بقى مفتوح طول الوقت');await load();render()}}
+function render(){if(!INFO)return;let h=tabsH();
+ if(tab=='orders'){h+=`<div class=row><span class=${INFO.open_now?'st':''}>${INFO.open_now?'🟢 مفتوح':'🔴 مقفول'}</span><button class="sm alt" onclick="BIG=!BIG;localStorage.setItem('big',BIG?'1':'0');render()">${BIG?'شاشة عادية':'شاشة المطبخ الكبيرة'}</button></div>`;
+  const a=ORD.filter(o=>['new','accepted'].includes(o.status)||(o.status=='picked'&&!o.ready_at));h+=a.length?a.map(ordCard).join(''):'<div class=card>مفيش طلبات شغالة</div>';
+  const w=ORD.filter(o=>o.status=='ready'||(o.status=='picked'&&o.ready_at));if(w.length)h+='<h3>مع الطيار / جاهزة</h3>'+w.map(ordCard).join('')}
+ else if(tab=='hist'){const d=ORD.filter(o=>['delivered','rejected','cancelled','failed'].includes(o.status));h+=d.length?d.map(ordCard).join(''):'<div class=card>مفيش سجل</div>'}
+ else if(tab=='menu'){const cats=[...new Set(MENU.map(i=>i.category).filter(Boolean))];
+  h+=`<datalist id=cats>${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist><div class=card><b>إضافة صنف</b><input id=nn placeholder="اسم الصنف"><input id=np placeholder="السعر" inputmode=decimal><input id=nc placeholder="القسم (مثلا: بيتزا)" list=cats><button onclick="addItem()">إضافة</button></div>`+MENU.map(menuItem).join('')}
+ else{h+=`<div class=card><h3>${esc(INFO.name)}</h3><div>الحالة: ${INFO.is_open?'مفتوح':'مقفول يدويا'} ${INFO.open_now?'(شغال دلوقتي)':'(مقفول دلوقتي)'}</div><button onclick="togOpen()">${INFO.is_open?'اقفل المطعم':'افتح المطعم'}</button></div>
+  <div class=card><b>مواعيد العمل (فتح وقفل تلقائي)</b><br><small>من</small><input type=time id=hf value="${esc(INFO.hours_from)}"><small>إلى</small><input type=time id=ht value="${esc(INFO.hours_to)}"><button onclick="saveHours()">حفظ المواعيد</button><button class=alt onclick="clearHours()">مفتوح طول الوقت</button></div><div class=card><b>إعلان خصم يظهر للعملاء</b><br><small>اكتب جملة قصيرة تظهر تحت اسم مطعمك (مثلا: خصم 20% على كل الوجبات). اتركها فاضية للإخفاء. ده مجرد إعلان ومش بيغير الأسعار.</small><input id=pm maxlength=40 placeholder="خصم 20% على كل الوجبات" value="${esc(INFO.promo||'')}"><button onclick="savePromo()">حفظ الإعلان</button><button class=alt onclick="$('#pm').value='';savePromo()">شيل الإعلان</button></div><div class=card><small>رسوم التوصيل: ${money(INFO.fee)} (بتتحدد من الإدارة)</small></div>`}
+ const sc=window.scrollY;$('#app').className=BIG?'big':'';$('#app').innerHTML=h;window.scrollTo(0,sc)}
+start(()=>{watch(async()=>{const a=document.activeElement;const typing=a&&/INPUT|TEXTAREA/.test(a.tagName)&&a.type!='file';await load();if(!typing)render()},4000)});
+</script><script>(function(){var s=document.createElement('style');s.id='th2';s.textContent=':root,[data-theme=dark],[data-theme=light]{--bg:#fff;--card:#fff;--fg:#1F1F1F;--mut:#6B6B6B;--gold:#F55906;--inp:#fff;--btn2:#F8ECDE}html,body{background:#fff!important;color:#1F1F1F;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:16px}header{background:#F55906;color:#fff;border-bottom:0;padding:14px 16px;box-shadow:0 2px 10px rgba(245,89,6,.25)}header b{color:#fff;font-size:20px;font-weight:800}header button,header button.alt{background:rgba(255,255,255,.22);color:#fff;border-radius:999px;font-size:14px;padding:7px 12px}#thm{display:none}#app{padding:12px}.card{background:#fff;color:#1F1F1F;border:1px solid #EEE;border-radius:18px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.card.new,.new{border:2px solid #F55906}h2,h3{color:#1F1F1F;font-size:18px;font-weight:800;margin:8px 0}h2{font-size:20px}small,.mut{color:#6B6B6B;font-size:13px}a{color:#F55906}.st{color:#F55906;font-weight:800}input,select,textarea{background:#fff;color:#1F1F1F;border:1.5px solid #E5E5E5;border-radius:12px;padding:11px 12px;font-size:16px}input:focus,select:focus,textarea:focus{outline:none;border-color:#F55906}button{background:#F55906;color:#fff;border-radius:12px;font-weight:800;font-size:16px;padding:11px 16px}button.alt{background:#F8ECDE;color:#F55906}button.red{background:#D32F2F;color:#fff}button.sm{font-size:14px;padding:6px 12px;border-radius:10px}button:disabled{opacity:.5}.tabs{gap:6px}.tabs button{border-radius:999px;font-size:14px;margin:0;min-width:0;padding:10px 4px;white-space:nowrap;flex:1 1 22%}.tabs button.on{background:#F55906;color:#fff}.tabs button:not(.on){background:#F8ECDE;color:#F55906}.chip{background:#F8ECDE;color:#F55906;font-size:13px;font-weight:700;border-radius:999px;padding:4px 12px}.banner{background:#F55906;color:#fff;border-radius:18px}.banner *,.banner b,.banner small{color:#fff!important}[style*="d4af37"]{background:#F8ECDE!important}footer{color:#6B6B6B;font-size:13px}#toast{background:#1F1F1F;color:#fff;border-radius:14px;font-size:15px}.ov{background:rgba(0,0,0,.55)}img.food{border-radius:12px}.bkb{background:#fff!important;color:#000!important;font-weight:900;font-size:17px;border:1.5px solid #E0E0E0;border-radius:999px;padding:10px 22px;box-shadow:0 2px 8px rgba(0,0,0,.12)}';document.head.appendChild(s)})();</script><script>window.__LA=Date.now();var _l=load;load=async function(){await _l.apply(this,arguments);window.__LA=Date.now()};
+window.__CFG={role:'rest',first:1,tasks:function(){return ORD.filter(function(o){return o.status=='new'}).map(function(o){return {key:'n'+o.id,t0:window.__LA-(o.created_age||0)*1000,what:'طلب جديد #'+o.id,tail:'لسه مستني ردك'}})},refresh:function(){var a=document.activeElement;if(a&&/INPUT|TEXTAREA/.test(a.tagName))return;load().then(render)}};</script><script>(function(){
+var CFG=window.__CFG,ROLE=CFG.role,au=new Audio('/snd-HV2.mp3'),unl=false,q=0,lock=false;au.preload='auto';
+window.beep=function(){};
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function hm(ts,sec){try{return new Date(ts*1000).toLocaleTimeString('en-GB',{timeZone:'Africa/Cairo',hour:'2-digit',minute:'2-digit',second:sec?'2-digit':undefined})}catch(e){return new Date(ts*1000).toTimeString().slice(0,sec?8:5)}}
+var st=document.createElement('style');st.textContent='.ln{font-weight:900;font-size:16px;margin:8px 0 4px;color:#1F1F1F}.nd{background:#F8ECDE;color:#B33F00;font-weight:800;border-radius:12px;padding:8px 12px;margin:6px 0}.stg{display:flex;align-items:center;margin:8px 4px 2px}.stg i{width:14px;height:14px;border-radius:50%;background:#DDD;display:block}.stg i.d{background:#F55906}.stg i.c{background:#F55906;box-shadow:0 0 0 4px #FBD3BC}.stg u{flex:1;height:3px;background:#DDD}.stg u.d{background:#F55906}.stl{display:flex;justify-content:space-between;font-size:11px;color:#6B6B6B;margin-bottom:6px}.tlw summary{color:#F55906;font-weight:800;margin:6px 0;cursor:pointer}.tlw div.ev{padding:4px 12px 4px 0;border-right:3px solid #F8ECDE;font-size:13px}.tlw div.ev.x{border-right-color:#D32F2F}.tlw time{color:#6B6B6B;margin-left:8px}';document.head.appendChild(st);
+window.OUI={esc:esc,hm:hm,
+ line:function(o){return '<div class=ln>'+esc(o.line||'')+'</div>'+(o.need?'<div class=nd>👉 '+esc(o.need)+'</div>':'')},
+ stage:function(o){if(o.stage==null||o.stage<0)return '';var L=['طلب','قبول','جاهز','طيار','تسليم'],h='<div class=stg>';for(var i=0;i<5;i++){h+=(i?'<u class="'+(i<=o.stage?'d':'')+'"></u>':'')+'<i class="'+(i<o.stage||o.stage==4?'d':i==o.stage?'c':'')+'"></i>'}return h+'</div><div class=stl>'+L.map(function(x){return '<span>'+x+'</span>'}).join('')+'</div>'},
+ tl:function(o,open,who){var t=o.tl||[];if(!t.length)return '';return '<details class=tlw'+(open?' open':'')+'><summary>الخط الزمني ('+t.length+')</summary>'+t.map(function(e){var bad=/^(rejected|cancelled|released|failed)$/.test(e.k);return '<div class="ev'+(bad?' x':'')+'"><time>'+hm(e.ts,1)+'</time>'+esc(e.text)+(who&&e.who?' <small>('+esc(e.who)+')</small>':'')+'</div>'}).join('')+'</details>'}};
+function unlock(){if(unl)return;unl=true;try{au.muted=true;var p=au.play();var done=function(){au.pause();au.currentTime=0;au.muted=false};if(p&&p.then)p.then(done).catch(function(){unl=false});else done()}catch(e){unl=false}}
+document.addEventListener('click',unlock);document.addEventListener('touchstart',unlock);
+function play(){q=1;next()}
+function next(){if(!q||(!au.paused&&!au.ended))return;q=0;try{au.muted=false;au.currentTime=0;var p=au.play();if(p&&p.then)p.then(function(){lock=false}).catch(function(){lock=true})}catch(e){lock=true}try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(e){}}
+setInterval(next,700);
+window.ALERT={play:play,dis:function(i){var m=MSG[i];if(!m)return;if(m.task){var t=T[m.key];if(t)t.d=t.s}else m.until=0;m.hide=1;draw()}};
+var box=document.createElement('div');box.id='alb';box.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;direction:rtl;pointer-events:none';
+var MSG=[];
+function line(c,t,i){return '<div onclick="ALERT.dis('+i+')" style="pointer-events:auto;background:'+c+';color:#fff;font-weight:900;font-size:17px;padding:11px 14px;border-bottom:2px solid #fff;text-align:center">'+t+'</div>'}
+function draw(){if(document.body&&!box.parentNode)document.body.appendChild(box);var now=Date.now(),h='';if(lock)h+='<div onclick="document.getElementById(\'alb\').dispatchEvent(new Event(\'unl\'))" style="pointer-events:auto;background:#1F1F1F;color:#fff;font-weight:900;font-size:17px;padding:12px;text-align:center">🔔 اضغط هنا عشان يشتغل صوت التنبيه</div>';MSG=MSG.filter(function(m){return !m.hide&&(m.keep||m.until>now)});MSG.slice(-2).forEach(function(m){h+=line(m.c,m.t,MSG.indexOf(m))});box.innerHTML=h}
+box.addEventListener('unl',function(){unlock();lock=false;play();draw()});
+window.__refresh=function(){try{CFG.refresh&&CFG.refresh()}catch(e){}};
+/* ---- escalation 2/5/10 min for tasks that need an action ---- */
+var KEY='al3_'+ROLE;function ld(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return{}}}
+var T=ld(),inited=false;
+function tick(){var ts;try{ts=CFG.tasks()}catch(e){return}if(!ts)return;var now=Date.now(),set={},bump=false,fresh=false;MSG=MSG.filter(function(m){return!m.task});
+ ts.forEach(function(x){set[x.key]=1;var t=T[x.key];if(!t){t={t0:x.t0,s:0};T[x.key]=t;if(!inited&&CFG.first&&x.t0>now-120000){fresh=true;t.f=now}}
+  var el=(now-t.t0)/1000,s=el>=600?3:el>=300?2:el>=120?1:0;if(s>t.s){t.s=s;bump=true}
+  if(t.s==3){if(t.d!==t.s)MSG.push({task:1,key:x.key,keep:1,c:'#B00020',t:'⚠️ تحذير: '+esc(x.what)+' '+esc(x.tail)+' من أكتر من 10 دقايق'})}
+  else if(t.s>=1){if(t.d!==t.s)MSG.push({task:1,key:x.key,keep:1,c:'#F55906',t:'⏰ تذكير: '+esc(x.what)+' '+esc(x.tail)})}
+  else if(t.f&&now-t.f<12000)MSG.push({task:1,until:t.f+12000,c:'#F55906',t:'🔔 '+esc(x.what)})});
+ for(var k in T)if(!set[k])delete T[k];
+ try{localStorage.setItem(KEY,JSON.stringify(T))}catch(e){}
+ inited=true;if(bump||fresh)play();draw()}
+setInterval(tick,2000);setTimeout(tick,1500);
+/* ---- instant events: long-poll (server holds the request up to 20s and answers the moment something happens) ---- */
+var since=-1,fails=0;
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+async function loop(){while(true){if(document.hidden||typeof TOKEN==='undefined'||!TOKEN){await sleep(1500);continue}
+ try{var ac=new AbortController(),to=setTimeout(function(){ac.abort()},30000);var r=await fetch('/api/events?since='+since+(since>=0?'&wait=20':''),{headers:{'X-Token':TOKEN},signal:ac.signal});clearTimeout(to);
+  if(r.status==401){await sleep(5000);continue}var j=await r.json();if(since<0){since=j.last;continue}since=j.last;fails=0;
+  if(j.events&&j.events.length){var snd=false,now=Date.now();j.events.forEach(function(e){MSG.push({until:now+12000,c:e.warn?'#B00020':'#F55906',t:'🔔 '+esc(e.text)+(e.need?'<br><small style="color:#fff;opacity:.92">👉 '+esc(e.need)+'</small>':'')});if(e.snd)snd=true});if(snd)play();draw();window.__refresh()}
+ }catch(e){fails++;await sleep(Math.min(3000*fails,10000))}}}
+loop();document.addEventListener('visibilitychange',function(){if(!document.hidden){window.__refresh()}});
+})();
+</script></body></html>
