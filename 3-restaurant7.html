@@ -1,0 +1,48 @@
+<!doctype html><html lang=ar><head><meta charset=utf-8></head><body>
+<script>const ROLE='restaurant',TITLE='3mac - المطعم';</script>
+<script src=/common.js></script>
+<script>
+let tab='orders',INFO=null,ORD=[],MENU=[],BIG=localStorage.getItem('big')=='1',seen=null,EDIT=0,DEL=0,PICK=0,REJ=0;
+const REASONS=['الصنف خلص','المطعم زحمة','قفلنا النهاردة','مش قادرين نوصل للمنطقة'];
+const PREPS=[10,15,20,30,45,60];
+function tabsH(){const t=[['orders','الطلبات'],['hist','السجل'],['menu','المنيو'],['set','الإعدادات']];return '<div class=tabs>'+t.map(x=>`<button class="${tab==x[0]?'on':''}" onclick="tab='${x[0]}';EDIT=0;render()">${x[1]}</button>`).join('')+'</div>'}
+async function load(){const [i,o,m]=await Promise.all([api('my/info'),api('orders'),api('my/menu')]);if(i)INFO=i;if(o){ORD=o;checkNew()}if(m)MENU=m}
+let lastBeep=0;
+function checkNew(){const nw=ORD.filter(o=>o.status=='new').map(o=>o.id);if(seen===null){seen=new Set(nw);if(nw.length)beep(3);lastBeep=Date.now();return}
+ const fresh=nw.filter(i=>!seen.has(i));fresh.forEach(i=>seen.add(i));if(fresh.length){beep(4);lastBeep=Date.now();toast('طلب جديد!')}}
+setInterval(()=>{if(ORD.some(o=>o.status=='new')&&Date.now()-lastBeep>20000){beep(2);lastBeep=Date.now()}},5000);
+function ordCard(o){const items=o.items.map(i=>i.qty+' × '+esc(i.name)).join('<br>');let act='';
+ if(o.status=='new'){act=(PICK==o.id?'<div>اختار وقت التحضير (دقيقة):</div>'+PREPS.map(p=>`<button onclick="accept(${o.id},${p})">${p}</button>`).join('')+`<button class=alt onclick="PICK=0;render()">إلغاء</button>`
+  :REJ==o.id?'<div>سبب الرفض:</div>'+REASONS.map((r,i)=>`<button class=red onclick="reject(${o.id},${i})">${r}</button>`).join('')+`<button class=alt onclick="REJ=0;render()">رجوع</button>`
+  :`<button onclick="PICK=${o.id};render()">قبول</button><button class=red onclick="REJ=${o.id};render()">رفض</button>`)}
+ else if(o.status=='accepted'||(o.status=='picked'&&!o.ready_at))act=`<button onclick="act(${o.id},'ready')">الأكل جاهز</button>`;
+ return `<div class="card ${o.status=='new'?'new':''}"><div class=row><b>#${o.id}</b><span class=st>${esc(o.status_ar)}${o.status=='accepted'&&o.accepted_at?'':''}</span></div><small>${timeAgo(o.created)}</small><div style="margin:6px 0">${items}</div>
+ ${o.note?'<div style="background:#F4F4F4;padding:8px;border-radius:10px">'+esc(o.note)+'</div>':''}<div class=row><small>الأكل: ${money(o.subtotal)}</small>${o.discount&&o.discount_by=='restaurant'?'<small>خصم عليكم: '+money(o.discount)+'</small>':''}</div>
+ ${o.status=='rejected'?'<small>سبب الرفض: '+esc(o.reject_reason)+'</small>':''}${act}</div>`}
+async function accept(id,p){const r=await api('order_action',{id,action:'accept',prep_min:p});PICK=0;if(r)toast('تم القبول');await load();render()}
+async function reject(id,i){const r=await api('order_action',{id,action:'reject',reason:REASONS[i]});REJ=0;if(r)toast('تم الرفض');await load();render()}
+async function act(id,a){const r=await api('order_action',{id,action:a});if(r)toast('تم');await load();render()}
+function menuItem(i){if(EDIT==i.id)return `<div class=card><input id=en value="${esc(i.name)}"><input id=ep value="${i.price}" inputmode=decimal><input id=ec value="${esc(i.category)}" placeholder="القسم" list=cats><button onclick="saveEdit(${i.id})">حفظ</button><button class=alt onclick="EDIT=0;render()">إلغاء</button></div>`;
+ return `<div class="card"><div class=row style="justify-content:flex-start">${i.pv?`<img class=food src="/photo/${i.id}?v=${i.pv}">`:''}<div style="flex:1"><b>${esc(i.name)}</b> <small>${esc(i.category)}</small><br>${money(i.price)} ${i.avail?'':'<span class=chip>غير متاح</span>'}</div></div>
+ <button class="sm alt" onclick="EDIT=${i.id};render()">تعديل</button><button class="sm alt" onclick="tg(${i.id})">${i.avail?'خلّصان':'متاح'}</button><button class="sm alt" onclick="document.getElementById('f${i.id}').click()">صورة</button><input type=file accept="image/*" id=f${i.id} style="display:none" onchange="photo(${i.id},this)">
+ ${DEL==i.id?`<button class="sm red" onclick="del(${i.id})">أكيد احذف</button>`:`<button class="sm red" onclick="DEL=${i.id};render()">حذف</button>`}</div>`}
+async function saveEdit(id){const r=await api('my/item_edit',{id,name:$('#en').value,price:$('#ep').value,category:$('#ec').value});if(r){EDIT=0;toast('تم الحفظ');await load();render()}}
+async function tg(id){await api('my/item_toggle',{id});await load();render()}
+async function del(id){DEL=0;await api('my/item_delete',{id});await load();render()}
+async function photo(id,inp){const f=inp.files[0];if(!f)return;toast('بجهز الصورة...');try{const d=await resizeImage(f,400);const r=await api('my/photo',{id,data:d});if(r){toast('تم رفع الصورة');await load();render()}}catch(e){toast('الصورة مش مناسبة')}}
+async function addItem(){const r=await api('my/item',{name:$('#nn').value,price:$('#np').value,category:$('#nc').value});if(r){toast('تمت الإضافة');await load();render()}}
+async function togOpen(){await api('my/toggle',{});await load();render()}
+async function saveHours(){const r=await api('my/hours',{from:$('#hf').value,to:$('#ht').value});if(r){toast('تم الحفظ');await load();render()}}
+async function clearHours(){const r=await api('my/hours',{from:'',to:''});if(r){toast('بقى مفتوح طول الوقت');await load();render()}}
+function render(){if(!INFO)return;let h=tabsH();
+ if(tab=='orders'){h+=`<div class=row><span class=${INFO.open_now?'st':''}>${INFO.open_now?'مفتوح':'مقفول'}</span><button class="sm alt" onclick="BIG=!BIG;localStorage.setItem('big',BIG?'1':'0');render()">${BIG?'شاشة عادية':'شاشة المطبخ الكبيرة'}</button></div>`;
+  const a=ORD.filter(o=>['new','accepted'].includes(o.status)||(o.status=='picked'&&!o.ready_at));h+=a.length?a.map(ordCard).join(''):'<div class=card>مفيش طلبات شغالة</div>';
+  const w=ORD.filter(o=>o.status=='ready'||(o.status=='picked'&&o.ready_at));if(w.length)h+='<h3>مع الطيار / جاهزة</h3>'+w.map(ordCard).join('')}
+ else if(tab=='hist'){const d=ORD.filter(o=>['delivered','rejected','cancelled','failed'].includes(o.status));h+=d.length?d.map(ordCard).join(''):'<div class=card>مفيش سجل</div>'}
+ else if(tab=='menu'){const cats=[...new Set(MENU.map(i=>i.category).filter(Boolean))];
+  h+=`<datalist id=cats>${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist><div class=card><b>إضافة صنف</b><input id=nn placeholder="اسم الصنف"><input id=np placeholder="السعر" inputmode=decimal><input id=nc placeholder="القسم (مثلا: بيتزا)" list=cats><button onclick="addItem()">إضافة</button></div>`+MENU.map(menuItem).join('')}
+ else{h+=`<div class=card><h3>${esc(INFO.name)}</h3><div>الحالة: ${INFO.is_open?'مفتوح':'مقفول يدويا'} ${INFO.open_now?'(شغال دلوقتي)':'(مقفول دلوقتي)'}</div><button onclick="togOpen()">${INFO.is_open?'اقفل المطعم':'افتح المطعم'}</button></div>
+  <div class=card><b>مواعيد العمل (فتح وقفل تلقائي)</b><br><small>من</small><input type=time id=hf value="${esc(INFO.hours_from)}"><small>إلى</small><input type=time id=ht value="${esc(INFO.hours_to)}"><button onclick="saveHours()">حفظ المواعيد</button><button class=alt onclick="clearHours()">مفتوح طول الوقت</button></div><div class=card><small>رسوم التوصيل: ${money(INFO.fee)} (بتتحدد من الإدارة)</small></div>`}
+ const sc=window.scrollY;$('#app').className=BIG?'big':'';$('#app').innerHTML=h;window.scrollTo(0,sc)}
+start(()=>{watch(async()=>{const a=document.activeElement;const typing=a&&/INPUT|TEXTAREA/.test(a.tagName)&&a.type!='file';await load();if(!typing)render()},4000)});
+</script></body></html>
