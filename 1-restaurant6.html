@@ -1,0 +1,83 @@
+<!doctype html><html lang=ar><head><meta charset=utf-8></head><body>
+<script>const ROLE='restaurant',TITLE='3mac - المطعم';</script>
+<script src=/common.js></script>
+<script>
+let tab='orders',INFO=null,ORD=[],MENU=[],BIG=localStorage.getItem('big')=='1',seen=null,EDIT=0,DEL=0,PICK=0,REJ=0;
+const REASONS=['الصنف خلص','المطعم زحمة','قفلنا النهاردة','مش قادرين نوصل للمنطقة'];
+const PREPS=[10,15,20,30,45,60];
+function tabsH(){const t=[['orders','الطلبات'],['hist','السجل'],['menu','المنيو'],['set','الإعدادات']];return '<div class=tabs>'+t.map(x=>`<button class="${tab==x[0]?'on':''}" onclick="tab='${x[0]}';EDIT=0;render()">${x[1]}</button>`).join('')+'</div>'}
+async function load(){const [i,o,m]=await Promise.all([api('my/info'),api('orders'),api('my/menu')]);if(i)INFO=i;if(o){ORD=o;checkNew()}if(m)MENU=m}
+let lastBeep=0;
+function checkNew(){const nw=ORD.filter(o=>o.status=='new').map(o=>o.id);if(seen===null){seen=new Set(nw);if(nw.length)beep(3);lastBeep=Date.now();return}
+ const fresh=nw.filter(i=>!seen.has(i));fresh.forEach(i=>seen.add(i));if(fresh.length){beep(4);lastBeep=Date.now();toast('طلب جديد!')}}
+setInterval(()=>{if(ORD.some(o=>o.status=='new')&&Date.now()-lastBeep>20000){beep(2);lastBeep=Date.now()}},5000);
+function ordCard(o){const items=o.items.map(i=>i.qty+' × '+esc(i.name)).join('<br>');let act='';
+ if(o.status=='new'){act=(PICK==o.id?'<div>اختار وقت التحضير (دقيقة):</div>'+PREPS.map(p=>`<button onclick="accept(${o.id},${p})">${p}</button>`).join('')+`<button class=alt onclick="PICK=0;render()">إلغاء</button>`
+  :REJ==o.id?'<div>سبب الرفض:</div>'+REASONS.map((r,i)=>`<button class=red onclick="reject(${o.id},${i})">${r}</button>`).join('')+`<button class="alt bkb" onclick="REJ=0;render()">رجوع</button>`
+  :`<button onclick="PICK=${o.id};render()">✔ قبول</button><button class=red onclick="REJ=${o.id};render()">✖ رفض</button>`)}
+ else if(o.status=='accepted'||(o.status=='picked'&&!o.ready_at))act=`<button onclick="act(${o.id},'ready')">الأكل جاهز</button>`;
+ return `<div class="card ${o.status=='new'?'new':''}"><div class=row><b>#${o.id}</b><span class=st>${esc(o.status_ar)}${o.status=='accepted'&&o.accepted_at?'':''}</span></div><small>${timeAgo(o.created)}</small><div style="margin:6px 0">${items}</div>
+ ${o.note?'<div style="background:#d4af3733;padding:6px;border-radius:6px">📝 '+esc(o.note)+'</div>':''}<div class=row><small>الأكل: ${money(o.subtotal)}</small>${o.discount&&o.discount_by=='restaurant'?'<small>خصم عليكم: '+money(o.discount)+'</small>':''}</div>
+ ${o.status=='rejected'?'<small>سبب الرفض: '+esc(o.reject_reason)+'</small>':''}${act}</div>`}
+async function accept(id,p){const r=await api('order_action',{id,action:'accept',prep_min:p});PICK=0;if(r)toast('تم القبول');await load();render()}
+async function reject(id,i){const r=await api('order_action',{id,action:'reject',reason:REASONS[i]});REJ=0;if(r)toast('تم الرفض');await load();render()}
+async function act(id,a){const r=await api('order_action',{id,action:a});if(r)toast('تم');await load();render()}
+function menuItem(i){if(EDIT==i.id)return `<div class=card><input id=en value="${esc(i.name)}"><input id=ep value="${i.price}" inputmode=decimal><input id=ec value="${esc(i.category)}" placeholder="القسم" list=cats><button onclick="saveEdit(${i.id})">حفظ</button><button class=alt onclick="EDIT=0;render()">إلغاء</button></div>`;
+ return `<div class="card"><div class=row style="justify-content:flex-start">${i.pv?`<img class=food src="/photo/${i.id}?v=${i.pv}">`:''}<div style="flex:1"><b>${esc(i.name)}</b> <small>${esc(i.category)}</small><br>${money(i.price)} ${i.avail?'':'<span class=chip>غير متاح</span>'}</div></div>
+ <button class="sm alt" onclick="EDIT=${i.id};render()">تعديل</button><button class="sm alt" onclick="tg(${i.id})">${i.avail?'خلّصان':'متاح'}</button><button class="sm alt" onclick="document.getElementById('f${i.id}').click()">📷 صورة</button><input type=file accept="image/*" id=f${i.id} style="display:none" onchange="photo(${i.id},this)">
+ ${DEL==i.id?`<button class="sm red" onclick="del(${i.id})">أكيد احذف</button>`:`<button class="sm red" onclick="DEL=${i.id};render()">حذف</button>`}</div>`}
+async function saveEdit(id){const r=await api('my/item_edit',{id,name:$('#en').value,price:$('#ep').value,category:$('#ec').value});if(r){EDIT=0;toast('تم الحفظ');await load();render()}}
+async function tg(id){await api('my/item_toggle',{id});await load();render()}
+async function del(id){DEL=0;await api('my/item_delete',{id});await load();render()}
+async function photo(id,inp){const f=inp.files[0];if(!f)return;toast('بجهز الصورة...');try{const d=await resizeImage(f,400);const r=await api('my/photo',{id,data:d});if(r){toast('تم رفع الصورة');await load();render()}}catch(e){toast('الصورة مش مناسبة')}}
+async function addItem(){const r=await api('my/item',{name:$('#nn').value,price:$('#np').value,category:$('#nc').value});if(r){toast('تمت الإضافة');await load();render()}}
+async function togOpen(){await api('my/toggle',{});await load();render()}
+async function savePromo(){const r=await api('my/promo',{text:$('#pm').value});if(r){toast('تم الحفظ');await load();render()}}
+async function saveHours(){const r=await api('my/hours',{from:$('#hf').value,to:$('#ht').value});if(r){toast('تم الحفظ');await load();render()}}
+async function clearHours(){const r=await api('my/hours',{from:'',to:''});if(r){toast('بقى مفتوح طول الوقت');await load();render()}}
+function render(){if(!INFO)return;let h=tabsH();
+ if(tab=='orders'){h+=`<div class=row><span class=${INFO.open_now?'st':''}>${INFO.open_now?'🟢 مفتوح':'🔴 مقفول'}</span><button class="sm alt" onclick="BIG=!BIG;localStorage.setItem('big',BIG?'1':'0');render()">${BIG?'شاشة عادية':'شاشة المطبخ الكبيرة'}</button></div>`;
+  const a=ORD.filter(o=>['new','accepted'].includes(o.status)||(o.status=='picked'&&!o.ready_at));h+=a.length?a.map(ordCard).join(''):'<div class=card>مفيش طلبات شغالة</div>';
+  const w=ORD.filter(o=>o.status=='ready'||(o.status=='picked'&&o.ready_at));if(w.length)h+='<h3>مع الطيار / جاهزة</h3>'+w.map(ordCard).join('')}
+ else if(tab=='hist'){const d=ORD.filter(o=>['delivered','rejected','cancelled','failed'].includes(o.status));h+=d.length?d.map(ordCard).join(''):'<div class=card>مفيش سجل</div>'}
+ else if(tab=='menu'){const cats=[...new Set(MENU.map(i=>i.category).filter(Boolean))];
+  h+=`<datalist id=cats>${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist><div class=card><b>إضافة صنف</b><input id=nn placeholder="اسم الصنف"><input id=np placeholder="السعر" inputmode=decimal><input id=nc placeholder="القسم (مثلا: بيتزا)" list=cats><button onclick="addItem()">إضافة</button></div>`+MENU.map(menuItem).join('')}
+ else{h+=`<div class=card><h3>${esc(INFO.name)}</h3><div>الحالة: ${INFO.is_open?'مفتوح':'مقفول يدويا'} ${INFO.open_now?'(شغال دلوقتي)':'(مقفول دلوقتي)'}</div><button onclick="togOpen()">${INFO.is_open?'اقفل المطعم':'افتح المطعم'}</button></div>
+  <div class=card><b>مواعيد العمل (فتح وقفل تلقائي)</b><br><small>من</small><input type=time id=hf value="${esc(INFO.hours_from)}"><small>إلى</small><input type=time id=ht value="${esc(INFO.hours_to)}"><button onclick="saveHours()">حفظ المواعيد</button><button class=alt onclick="clearHours()">مفتوح طول الوقت</button></div><div class=card><b>إعلان خصم يظهر للعملاء</b><br><small>اكتب جملة قصيرة تظهر تحت اسم مطعمك (مثلا: خصم 20% على كل الوجبات). اتركها فاضية للإخفاء. ده مجرد إعلان ومش بيغير الأسعار.</small><input id=pm maxlength=40 placeholder="خصم 20% على كل الوجبات" value="${esc(INFO.promo||'')}"><button onclick="savePromo()">حفظ الإعلان</button><button class=alt onclick="$('#pm').value='';savePromo()">شيل الإعلان</button></div><div class=card><small>رسوم التوصيل: ${money(INFO.fee)} (بتتحدد من الإدارة)</small></div>`}
+ const sc=window.scrollY;$('#app').className=BIG?'big':'';$('#app').innerHTML=h;window.scrollTo(0,sc)}
+start(()=>{watch(async()=>{const a=document.activeElement;const typing=a&&/INPUT|TEXTAREA/.test(a.tagName)&&a.type!='file';await load();if(!typing)render()},4000)});
+</script><script>(function(){var s=document.createElement('style');s.id='th2';s.textContent=':root,[data-theme=dark],[data-theme=light]{--bg:#fff;--card:#fff;--fg:#1F1F1F;--mut:#6B6B6B;--gold:#F55906;--inp:#fff;--btn2:#F8ECDE}html,body{background:#fff!important;color:#1F1F1F;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:16px}header{background:#F55906;color:#fff;border-bottom:0;padding:14px 16px;box-shadow:0 2px 10px rgba(245,89,6,.25)}header b{color:#fff;font-size:20px;font-weight:800}header button,header button.alt{background:rgba(255,255,255,.22);color:#fff;border-radius:999px;font-size:14px;padding:7px 12px}#thm{display:none}#app{padding:12px}.card{background:#fff;color:#1F1F1F;border:1px solid #EEE;border-radius:18px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.card.new,.new{border:2px solid #F55906}h2,h3{color:#1F1F1F;font-size:18px;font-weight:800;margin:8px 0}h2{font-size:20px}small,.mut{color:#6B6B6B;font-size:13px}a{color:#F55906}.st{color:#F55906;font-weight:800}input,select,textarea{background:#fff;color:#1F1F1F;border:1.5px solid #E5E5E5;border-radius:12px;padding:11px 12px;font-size:16px}input:focus,select:focus,textarea:focus{outline:none;border-color:#F55906}button{background:#F55906;color:#fff;border-radius:12px;font-weight:800;font-size:16px;padding:11px 16px}button.alt{background:#F8ECDE;color:#F55906}button.red{background:#D32F2F;color:#fff}button.sm{font-size:14px;padding:6px 12px;border-radius:10px}button:disabled{opacity:.5}.tabs{gap:6px}.tabs button{border-radius:999px;font-size:14px;margin:0;min-width:0;padding:10px 4px;white-space:nowrap;flex:1 1 22%}.tabs button.on{background:#F55906;color:#fff}.tabs button:not(.on){background:#F8ECDE;color:#F55906}.chip{background:#F8ECDE;color:#F55906;font-size:13px;font-weight:700;border-radius:999px;padding:4px 12px}.banner{background:#F55906;color:#fff;border-radius:18px}.banner *,.banner b,.banner small{color:#fff!important}[style*="d4af37"]{background:#F8ECDE!important}footer{color:#6B6B6B;font-size:13px}#toast{background:#1F1F1F;color:#fff;border-radius:14px;font-size:15px}.ov{background:rgba(0,0,0,.55)}img.food{border-radius:12px}.bkb{background:#fff!important;color:#000!important;font-weight:900;font-size:17px;border:1.5px solid #E0E0E0;border-radius:999px;padding:10px 22px;box-shadow:0 2px 8px rgba(0,0,0,.12)}';document.head.appendChild(s)})();</script><script>window.__ROLE='rest';window.__first=1;window.__tasks=function(){return ORD.filter(function(o){return o.status=='new'}).map(function(o){return {id:o.id,what:'طلب جديد #'+o.id+' من '+(o.name||'')}})};(function(){
+var au=new Audio('/snd-HV2.mp3'),unl=false,ROLE=window.__ROLE,pend=0,q=0;au.preload='auto';
+window.beep=function(){};
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function unlock(){if(unl)return;unl=true;try{au.muted=true;var p=au.play();var done=function(){au.pause();au.currentTime=0;au.muted=false};if(p&&p.then)p.then(done).catch(function(){unl=false});else done()}catch(e){unl=false}}
+document.addEventListener('click',unlock);document.addEventListener('touchstart',unlock);
+var lock=false;
+function play(){q=1;next()}
+function next(){if(!q||(!au.paused&&!au.ended))return;q=0;try{au.muted=false;au.currentTime=0;var p=au.play();if(p&&p.then)p.then(function(){lock=false}).catch(function(){lock=true})}catch(e){lock=true}try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(e){}}
+setInterval(next,700);
+var box=document.createElement('div');box.id='alb';box.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;direction:rtl;font-family:inherit;pointer-events:none';
+function mount(){if(document.body&&!box.parentNode)document.body.appendChild(box)}
+var KEY='al_'+ROLE;function ld(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return{}}}
+var T=ld(),MSG=[];
+function line(c,txt,onclick){return '<div style="pointer-events:auto;background:'+c+';color:#fff;font-weight:900;font-size:18px;padding:12px 14px;border-bottom:2px solid #fff;text-align:center">'+txt+'</div>'}
+function draw(){mount();var h='';if(lock)h+='<div onclick="document.getElementById(\'alb\').dispatchEvent(new Event(\'unl\'))" style="pointer-events:auto;background:#1F1F1F;color:#fff;font-weight:900;font-size:17px;padding:12px;text-align:center">🔔 اضغط هنا عشان يشتغل صوت التنبيه</div>';
+ var now=Date.now();MSG=MSG.filter(function(m){return m.until>now||m.keep});
+ MSG.forEach(function(m){h+=line(m.c,m.t)});box.innerHTML=h}
+box.addEventListener('unl',function(){unlock();lock=false;play();draw()});
+function tick(){var ts;try{ts=window.__tasks()}catch(e){return}var now=Date.now(),set={},fresh=false,bump=false;MSG=MSG.filter(function(m){return!m.task});
+ ts.forEach(function(x){set[x.id]=1;var t=T[x.id];if(!t){t=T[x.id]={t0:now,s:0};if(window.__first)fresh=true;else t.s=-1}
+  var el=(now-t.t0)/1000,st=el>=600?3:el>=300?2:el>=120?1:0;
+  if(t.s<0&&st==0)st=-1;
+  if(st>t.s){t.s=st;bump=true}
+  var w=x.what,s=t.s;
+  if(s==3)MSG.push({task:1,keep:1,c:'#B00020',t:'⚠️ تحذير: '+esc(w)+' لسه مستني ردك من أكتر من 10 دقايق'});
+  else if(s>=1)MSG.push({task:1,keep:1,c:'#F55906',t:'⏰ تذكير: '+esc(w)+' لسه مستني ردك'});
+  else if(s==0&&window.__first&&now-t.t0<12000)MSG.push({task:1,until:t.t0+12000,c:'#F55906',t:'🔔 '+esc(w)})});
+ for(var id in T)if(!set[id])delete T[id];
+ try{localStorage.setItem(KEY,JSON.stringify(T))}catch(e){}
+ if(bump||fresh)play();draw()}
+setInterval(tick,2000);setTimeout(tick,1200);
+if(window.__chg){var prev=null;setInterval(function(){var o;try{o=window.__chg()}catch(e){return}if(!o)return;var m={};o.forEach(function(x){m[x.id]=x.status});if(prev){o.forEach(function(x){if(prev[x.id]!==x.status){play();MSG.push({until:Date.now()+10000,c:'#F55906',t:'🔔 طلبك #'+x.id+': '+esc(x.status_ar||x.status)})}})}prev=m},2000)}
+})();
+</script></body></html>
