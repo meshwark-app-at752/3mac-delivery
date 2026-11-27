@@ -1,0 +1,49 @@
+<!doctype html><html lang=ar><head><meta charset=utf-8></head><body>
+<script>const ROLE='admin',TITLE='3mac - الإدارة';</script>
+<script src=/common.js></script>
+<script>
+let tab='orders',ORD=[],REP=null,USERS=[],DISCS=[],NEWCODE='',FIL='today',SETV=null,LASTUSERS='';
+const STS=[['today','النهاردة'],['new','جديد'],['accepted','اتقبل'],['ready','جاهز'],['picked','في الطريق'],['delivered','اتسلم'],['rejected','مرفوض'],['cancelled','ملغي'],['failed','تعذر']];
+async function loadTab(){
+ if(tab=='orders'){const r=await api('orders'+(FIL=='today'?'?day=today':'?status='+FIL));if(r)ORD=r}
+ else if(tab=='rep'){const r=await api('admin/report');if(r)REP=r}
+ else if(tab=='users'){const r=await api('admin/users');if(r)USERS=r}
+ else if(tab=='disc'){const r=await api('admin/discounts');if(r)DISCS=r}
+ else if(tab=='set'){const r=await fetch('/api/settings').then(r=>r.json());SETV=r}}
+function tabsH(){const t=[['orders','الطلبات'],['rep','التقارير'],['users','المستخدمين'],['disc','الخصومات'],['set','الإعدادات']];return '<div class=tabs>'+t.map(x=>`<button class="${tab==x[0]?'on':''}" onclick="sw('${x[0]}')">${x[1]}</button>`).join('')+'</div>'}
+async function sw(t){tab=t;await loadTab();render()}
+function oCard(o){return `<div class=card><div class=row><b>${esc(o.rest_name)} #${o.id}</b><span class=st>${esc(o.status_ar)}</span></div><small>${esc(o.name)} · ${esc(o.phone)} · ${timeAgo(o.created)}</small><br>${o.items.map(i=>i.qty+' × '+esc(i.name)).join('، ')}<br><small>${esc(o.address)}${o.note?' · 📝 '+esc(o.note):''}</small>
+ <div class=row><span>الإجمالي</span><b>${money(o.total)}</b></div><small>أكل ${money(o.subtotal)} + توصيل ${money(o.fee)}${o.discount?' - خصم '+money(o.discount)+' ('+esc(o.discount_code)+' على '+(o.discount_by=='owner'?'المالك':'المطعم')+')':''}</small>
+ ${o.reject_reason?'<br><small>سبب الرفض: '+esc(o.reject_reason)+'</small>':''}${o.fail_reason?'<br><small>سبب التعذر: '+esc(o.fail_reason)+'</small>':''}
+ ${['new','accepted','ready','picked'].includes(o.status)?`<br><button class="red sm" onclick="cancelO(${o.id})">إلغاء الطلب</button>`:''}</div>`}
+async function cancelO(id){const r=await api('order_action',{id,action:'cancel'});if(r){toast('تم الإلغاء');await loadTab();render()}}
+function box(t,s){return `<div class=card><h3>${t}</h3><div class=row><span>عدد الطلبات المسلّمة</span><b>${s.count}</b></div><div class=row><span>مبيعات الأكل</span><b>${money(s.subtotal)}</b></div><div class=row><span>رسوم التوصيل</span><b>${money(s.fees)}</b></div><div class=row><span>خصومات على المالك</span><b>- ${money(s.discount_owner)}</b></div><div class=row><span>خصومات على المطاعم</span><b>${money(s.discount_rest)}</b></div><div class=row><b>أرباحك (توصيل - خصم المالك)</b><b>${money(s.fees-s.discount_owner)}</b></div><div class=row><span>إجمالي الكاش المتحصّل</span><b>${money(s.total)}</b></div></div>`}
+const SN={new:'جديد',accepted:'اتقبل',ready:'جاهز',picked:'في الطريق',delivered:'اتسلم',rejected:'مرفوض',cancelled:'ملغي',failed:'تعذر'};
+function repH(){if(!REP)return '';let h=box('النهاردة',REP.today)+'<div class=card><b>عدد طلبات النهاردة حسب الحالة</b><br>'+(Object.keys(REP.status_today).length?Object.entries(REP.status_today).map(([k,v])=>`<span class=chip>${SN[k]||k}: ${v}</span>`).join(''):'<small>لسه مفيش</small>')+'</div>';
+ h+=box('آخر 7 أيام',REP.week)+box('الكل',REP.all);
+ h+='<div class=card><h3>المطاعم (النهاردة)</h3>'+REP.restaurants.map(r=>`<div class=row><span>${esc(r.name)}</span><span>${r.delivered} طلب · ${money(r.subtotal)}</span></div>`).join('')+'</div>';
+ h+='<div class=card><h3>الطيارين (النهاردة)</h3>'+REP.couriers.map(r=>`<div class=row><span>${esc(r.name)}</span><span>${r.delivered} اتسلم · ${r.failed} تعذر · كاش ${money(r.cash)}</span></div>`).join('')+'</div>';
+ return h}
+const CATN={rest:'مطاعم',groc:'بقالة',pharm:'صيدليات',shop:'المتاجر'};function catSel(id,v){return `<select id=${id} style="width:auto">${Object.keys(CATN).map(k=>`<option value=${k}${(v||'rest')==k?' selected':''}>${CATN[k]}</option>`).join('')}</select>`}
+function userCard(u){const r=u.role=='restaurant';return `<div class=card><div class=row><b>${esc(u.name)}</b><span class=chip>${r?(CATN[u.cat||'rest']||'مطعم'):'طيار'}${u.active?'':' · موقوف'}</span></div><small>الكود: <b>${esc(u.code)}</b></small>
+ ${r?`<div class=row style="flex-wrap:wrap">${u.hasp?`<img src="/rpic/${u.rid}?v=${Date.now()}" style="width:90px;height:50px;object-fit:cover;border-radius:8px">`:'<small>مفيش صورة</small>'}<button class="sm alt" onclick="document.getElementById('rp${u.id}').click()">📷 صورة المطعم</button>${u.hasp?`<button class="sm red" onclick="rpDel(${u.rid})">مسح الصورة</button>`:''}<input type=file accept="image/*" id=rp${u.id} style="display:none" onchange="rpUp(${u.rid},this)"></div>${u.promo?`<small>خصم المطعم: ${esc(u.promo)}</small>`:''}<div class=row style="flex-wrap:wrap"><small>القسم</small>${catSel('ct'+u.id,u.cat)}<small>التوصيل</small><input id=fee${u.id} value="${u.fee}" inputmode=decimal style="width:80px"><label><input type=checkbox id=ft${u.id} style="width:auto" ${u.featured?'checked':''}> مميز</label><button class="sm" onclick="setR(${u.rid},${u.id})">حفظ</button></div>`:''}
+ <button class="sm ${u.active?'red':''}" onclick="utog(${u.id})">${u.active?'إيقاف':'إعادة تفعيل'}</button></div>`}
+async function rpUp(id,inp){const f=inp.files[0];if(!f)return;toast('بجهز الصورة...');try{const d=await resizeImage(f,640);const r=await api('admin/rest_photo',{id,data:d});if(r){toast('تم رفع الصورة');await loadTab();render()}}catch(e){toast('الصورة مش مناسبة')}}
+async function rpDel(id){if(!confirm('تمسح صورة المطعم؟'))return;const r=await api('admin/rest_photo_delete',{id});if(r){toast('تم المسح');await loadTab();render()}}
+async function setR(rid,uid){const r=await api('admin/restaurant_set',{id:rid,fee:$('#fee'+uid).value,featured:$('#ft'+uid).checked,cat:$('#ct'+uid).value});if(r){toast('تم الحفظ');await loadTab();render()}}
+async function utog(id){const r=await api('admin/user_toggle',{id});if(r){await loadTab();render()}}
+async function addR(){const r=await api('admin/add_restaurant',{name:$('#rn').value,fee:$('#rf').value||0,cat:$('#rc').value});if(r){NEWCODE='كود الشريك الجديد: '+r.code;await loadTab();render()}}
+async function addC(){const r=await api('admin/add_courier',{name:$('#cn').value});if(r){NEWCODE='كود الطيار الجديد: '+r.code;await loadTab();render()}}
+async function addD(){const r=await api('admin/discount_add',{code:$('#dcode').value,amount:$('#damt').value,borne_by:$('#dby').value,max_uses:$('#dmax').value||0});if(r){toast('تم إضافة الكود');await loadTab();render()}}
+async function dtog(id){await api('admin/discount_toggle',{id});await loadTab();render()}
+async function saveSet(){const r=await api('admin/settings',{banner:$('#sb').value,welcome:$('#sw').value,contact_phone:$('#sp').value});if(r){toast('تم الحفظ');await loadTab();render()}}
+async function backup(){const r=await api('admin/backup_link');if(r){toast('بيبدأ التحميل...');location.href=r.url}}
+function render(){let h=tabsH();
+ if(tab=='orders'){h+='<div class=tabs style="margin-top:6px">'+STS.map(s=>`<button class="sm ${FIL==s[0]?'on':''}" onclick="FIL='${s[0]}';sw('orders')">${s[1]}</button>`).join('')+'</div>'+(ORD.length?ORD.map(oCard).join(''):'<div class=card>مفيش طلبات</div>')}
+ else if(tab=='rep')h+=repH();
+ else if(tab=='users'){h+=(NEWCODE?`<div class=banner>${esc(NEWCODE)}<br><small style="color:#000">اكتبه وابعته له</small></div>`:'')+`<div class=card><b>إضافة شريك (مطعم / بقالة / صيدلية / متجر)</b><input id=rn placeholder="اسم الشريك">${catSel('rc','rest')}<input id=rf placeholder="رسوم التوصيل" inputmode=decimal><button onclick="addR()">إضافة شريك</button></div><div class=card><b>إضافة طيار</b><input id=cn placeholder="اسم الطيار"><button onclick="addC()">إضافة طيار</button></div>`+USERS.map(userCard).join('')}
+ else if(tab=='disc'){h+=`<div class=card><b>كود خصم جديد</b><input id=dcode placeholder="الكود (مثلا WELCOME10)"><input id=damt placeholder="قيمة الخصم بالجنيه" inputmode=decimal><select id=dby><option value=owner>الخصم على المالك</option><option value=restaurant>الخصم على المطعم</option></select><input id=dmax placeholder="أقصى عدد استخدامات (0 = بلا حد)" inputmode=numeric><button onclick="addD()">إضافة</button></div>`+DISCS.map(d=>`<div class=card><div class=row><b>${esc(d.code)}</b><span>${money(d.amount)} · على ${d.borne_by=='owner'?'المالك':'المطعم'}</span></div><small>استخدم ${d.uses}${d.max_uses?' من '+d.max_uses:''} مرة · ${d.active?'شغال':'موقوف'}</small><br><button class="sm ${d.active?'red':''}" onclick="dtog(${d.id})">${d.active?'إيقاف':'تفعيل'}</button></div>`).join('')}
+ else if(tab=='set'&&SETV){h+=`<div class=card><b>إعلان في صفحة العميل (اتركه فاضي للإخفاء)</b><input id=sb maxlength=200 value="${esc(SETV.banner)}"><small>اكتب نص، أو الصق رابط مباشر (https) لصورة متحركة GIF أو لفيديو mp4 وهيشتغل تلقائيا بدون صوت وبتكرار.</small><b>رسالة الترحيب أول مرة</b><textarea id=sw rows=3>${esc(SETV.welcome)}</textarea><b>رقم التواصل</b><input id=sp value="${esc(SETV.contact_phone)}" inputmode=tel><button onclick="saveSet()">حفظ</button></div><div class=card><b>نسخة احتياطية</b><br><small>بتنزل ملف بكل بياناتك.</small><br><button onclick="backup()">⬇ تحميل نسخة احتياطية</button></div>`}
+ const sc=window.scrollY;$('#app').innerHTML=h;window.scrollTo(0,sc)}
+start(()=>{watch(async()=>{const a=document.activeElement;const typing=a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName);if(tab=='set'||typing)return;await loadTab();render()},5000);loadTab().then(render)});
+</script></body></html>
